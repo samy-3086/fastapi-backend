@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.ext.declarative import declarative_base
@@ -6,6 +7,14 @@ from sqlalchemy.orm import sessionmaker
 
 # Initialize FastAPI app
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://soft-kelpie-3f3e73.netlify.app/"],  # better: ["https://soft-kelpie-3f3e73.netlify.app"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Database setup (using SQLite; replace with PostgreSQL if needed)
 DATABASE_URL = "sqlite:///./test.db"  # For cloud, use something like: postgresql://user:password@host/db
