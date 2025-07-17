@@ -10,7 +10,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://soft-kelpie-3f3e73.netlify.app/"],  # better: ["https://soft-kelpie-3f3e73.netlify.app"]
+    allow_origins=["https://soft-kelpie-3f3e73.netlify.app"],  # better: ["https://soft-kelpie-3f3e73.netlify.app"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
