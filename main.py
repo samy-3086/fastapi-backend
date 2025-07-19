@@ -5,20 +5,26 @@ from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+# -------------------- CONFIG --------------------
+
 app = FastAPI()
 
+# CORS: allow frontend (Netlify) to access backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://soft-kelpie-3f3e73.netlify.app"],  # frontend domain
+    allow_origins=["https://soft-kelpie-3f3e73.netlify.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine)
+# Database (Railway PostgreSQL)
+DATABASE_URL = "postgresql://postgres:nxcSPNhdeobiAcAWjqwihSdhZYIBVGoQ@centerbeam.proxy.rlwy.net:46423/railway"
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# -------------------- MODELS --------------------
 
 class Product(Base):
     __tablename__ = "products"
@@ -30,6 +36,8 @@ class Product(Base):
     image_url = Column(String)
 
 Base.metadata.create_all(bind=engine)
+
+# -------------------- SCHEMAS --------------------
 
 class ProductCreate(BaseModel):
     name: str
@@ -51,6 +59,8 @@ class ProductResponse(BaseModel):
     class Config:
         orm_mode = True
 
+# -------------------- ROUTES --------------------
+
 @app.get("/")
 def root():
     return {"message": "Welcome to the FastAPI Product API!"}
@@ -63,7 +73,7 @@ def add_product(product: ProductCreate):
     db.commit()
     db.refresh(new_product)
     db.close()
-    return {"message": "Product added successfully", "product_id": new_product.id}
+    return {"message": "✅ Product added successfully", "product_id": new_product.id}
 
 @app.get("/list_products", response_model=list[ProductResponse])
 def list_products():
@@ -84,7 +94,7 @@ def update_product(product: ProductUpdate):
     db.commit()
     db.refresh(db_item)
     db.close()
-    return {"message": "Product updated successfully"}
+    return {"message": "✅ Product updated successfully"}
 
 @app.delete("/delete_product/{product_id}")
 def delete_product(product_id: int):
@@ -96,4 +106,15 @@ def delete_product(product_id: int):
     db.delete(db_item)
     db.commit()
     db.close()
-    return {"message": "Product deleted successfully"}
+    return {"message": "🗑️ Product deleted successfully"}
+
+# -------------------- EXTRA: show routes on startup --------------------
+
+from fastapi.routing import APIRoute
+
+@app.on_event("startup")
+def show_routes():
+    print("Registered API routes:")
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            print(f"Path: {route.path} | Methods: {route.methods}")
