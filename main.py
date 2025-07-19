@@ -1,15 +1,20 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-
-# -------------------- CONFIG --------------------
+import shutil
+import os
+import uuid
 
 app = FastAPI()
 
-# CORS: allow frontend (Netlify) to access backend
+# Serve uploaded images
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# CORS: allow frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://soft-kelpie-3f3e73.netlify.app"],
@@ -18,14 +23,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Database (Railway PostgreSQL)
+# Database
 DATABASE_URL = "postgresql://postgres:nxcSPNhdeobiAcAWjqwihSdhZYIBVGoQ@centerbeam.proxy.rlwy.net:46423/railway"
 engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# -------------------- MODELS --------------------
-
+# Model
 class Product(Base):
     __tablename__ = "products"
     id = Column(Integer, primary_key=True, index=True)
@@ -37,18 +41,7 @@ class Product(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# -------------------- SCHEMAS --------------------
-
-class ProductCreate(BaseModel):
-    name: str
-    brand: str
-    category: str
-    price: float
-    image_url: str
-
-class ProductUpdate(ProductCreate):
-    id: int
-
+# Schemas
 class ProductResponse(BaseModel):
     id: int
     name: str
@@ -59,21 +52,31 @@ class ProductResponse(BaseModel):
     class Config:
         orm_mode = True
 
-# -------------------- ROUTES --------------------
-
-@app.get("/")
-def root():
-    return {"message": "Welcome to the FastAPI Product API!"}
-
+# Routes
 @app.post("/add_product")
-def add_product(product: ProductCreate):
+async def add_product(
+    name: str = Form(...),
+    brand: str = Form(...),
+    category: str = Form(...),
+    price: float = Form(...),
+    image: UploadFile = File(...)
+):
+    # Save file
+    os.makedirs("uploads", exist_ok=True)
+    filename = f"{uuid.uuid4().hex}_{image.filename}"
+    filepath = os.path.join("uploads", filename)
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(image.file, buffer)
+
+    image_url = f"/uploads/{filename}"
+
     db = SessionLocal()
-    new_product = Product(**product.dict())
+    new_product = Product(name=name, brand=brand, category=category, price=price, image_url=image_url)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
     db.close()
-    return {"message": "✅ Product added successfully", "product_id": new_product.id}
+    return {"message": "✅ Product added", "product_id": new_product.id}
 
 @app.get("/list_products", response_model=list[ProductResponse])
 def list_products():
@@ -82,39 +85,50 @@ def list_products():
     db.close()
     return items
 
-@app.put("/update_product")
-def update_product(product: ProductUpdate):
+@app.put("/update_product/{product_id}")
+async def update_product(
+    product_id: int,
+    name: str = Form(...),
+    brand: str = Form(...),
+    category: str = Form(...),
+    price: float = Form(...),
+    image: UploadFile = File(None)  # optional new image
+):
     db = SessionLocal()
-    db_item = db.query(Product).filter(Product.id == product.id).first()
-    if not db_item:
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
         db.close()
         raise HTTPException(status_code=404, detail="Product not found")
-    for field, value in product.dict().items():
-        setattr(db_item, field, value)
+
+    product.name = name
+    product.brand = brand
+    product.category = category
+    product.price = price
+
+    if image:
+        filename = f"{uuid.uuid4().hex}_{image.filename}"
+        filepath = os.path.join("uploads", filename)
+        with open(filepath, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        product.image_url = f"/uploads/{filename}"
+
     db.commit()
-    db.refresh(db_item)
+    db.refresh(product)
     db.close()
-    return {"message": "✅ Product updated successfully"}
+    return {"message": "✅ Product updated"}
 
 @app.delete("/delete_product/{product_id}")
 def delete_product(product_id: int):
     db = SessionLocal()
-    db_item = db.query(Product).filter(Product.id == product_id).first()
-    if not db_item:
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
         db.close()
         raise HTTPException(status_code=404, detail="Product not found")
-    db.delete(db_item)
+    db.delete(product)
     db.commit()
     db.close()
-    return {"message": "🗑️ Product deleted successfully"}
+    return {"message": "🗑️ Product deleted"}
 
-# -------------------- EXTRA: show routes on startup --------------------
-
-from fastapi.routing import APIRoute
-
-@app.on_event("startup")
-def show_routes():
-    print("Registered API routes:")
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            print(f"Path: {route.path} | Methods: {route.methods}")
+@app.get("/")
+def root():
+    return {"message": "FastAPI file upload CRUD ready"}
